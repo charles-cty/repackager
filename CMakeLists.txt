@@ -106,6 +106,7 @@ if(REPACKAGER_BUILD_TESTS)
     tests/test_cli.cpp
     tests/test_pe.cpp
     tests/test_rollback.cpp
+    tests/test_assets.cpp
     tests/pe_builder.cpp
   )
   target_link_libraries(repackager_tests PRIVATE repackager_lib)

@@ -109,8 +109,13 @@ Status rollback_journal(const OperationJournal& journal, const RollbackHooks& ho
     }
     std::error_code ec;
     if (std::filesystem::is_directory(p, ec)) {
-      // Only remove if empty after children were deleted; otherwise leave.
-      std::filesystem::remove(p, ec);
+      if (!original_exe.empty() && path_contained(p, original_exe)) {
+        return Status::fail(ExitCode::Internal,
+                            "rollback refused to delete directory containing original executable");
+      }
+      // Tool-owned dirs (e.g. RepackagerAssets/<opid>) may still hold journaled
+      // children if they were recorded after the directory. remove_all the dir.
+      std::filesystem::remove_all(p, ec);
     } else {
       std::filesystem::remove(p, ec);
     }

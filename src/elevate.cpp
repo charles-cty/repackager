@@ -41,7 +41,7 @@ bool process_is_elevated() {
 #ifdef _WIN32
   return win_process_is_elevated();
 #else
-  return true;
+  return false;
 #endif
 }
 

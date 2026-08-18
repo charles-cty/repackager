@@ -1,8 +1,25 @@
 #include "repackager/hash.hpp"
 #include "repackager/identity.hpp"
+#include "repackager/manifest.hpp"
 #include "test_support.hpp"
 
 using namespace repackager;
+
+TEST(default_ctor_constructs_trailing_string_members) {
+  // MSVC's implicit default ctor used to skip class members that follow the
+  // last default-member-initializer (0xCC dest, AV on assign).
+  ManifestRequest req;
+  req.source_application_id = "Second";
+  CHECK_EQ(req.source_application_id, std::string("Second"));
+  PackageIdentity ident;
+  ident.resource_id = "res";
+  CHECK_EQ(ident.resource_id, std::string("res"));
+  ApplicationDeclaration app;
+  app.display_name = "Disp";
+  app.description = "Desc";
+  CHECK_EQ(app.display_name, std::string("Disp"));
+  CHECK_EQ(app.description, std::string("Desc"));
+}
 
 TEST(identity_valid_and_invalid_name) {
   CHECK(validate_package_name("Contoso.App"));

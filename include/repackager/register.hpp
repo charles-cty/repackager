@@ -3,8 +3,10 @@
 #include "repackager/error.hpp"
 #include "repackager/models.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace repackager {
@@ -48,8 +50,8 @@ struct InstalledPackage {
   bool is_resource = false;
   bool is_optional = false;
   bool is_bundle = false;
-  std::string signature_kind;
-  std::vector<std::string> dependencies;
+  std::string signature_kind{};
+  std::vector<std::string> dependencies{};
 };
 
 Expected<RegistrationResult> register_sparse(const RegistrationRequest& request);
@@ -61,5 +63,9 @@ Expected<InstalledPackage> find_installed_package(std::string_view full_name);
 
 Status activate_aumid(std::string_view aumid, std::string_view arguments = {});
 Status launch_exe(const std::filesystem::path& exe);
+
+// True when RemovePackageAsync failed because the package is already gone.
+// HRESULTs include ERROR_INSTALL_PACKAGE_NOT_FOUND (0x80073CF1).
+bool is_package_not_installed_status(std::int32_t hresult, std::string_view message);
 
 }  // namespace repackager

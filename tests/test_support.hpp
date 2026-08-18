@@ -53,14 +53,15 @@ inline int run_all() {
   for (const auto& t : registry()) {
     try {
       t.fn();
-      std::cout << "PASS  " << t.name << '\n';
+      std::cout << "PASS  " << t.name << '\n' << std::flush;
       ++passed;
     } catch (const std::exception& e) {
-      std::cout << "FAIL  " << t.name << "  " << e.what() << '\n';
+      std::cout << "FAIL  " << t.name << "  " << e.what() << '\n' << std::flush;
       ++failed;
     }
   }
-  std::cout << passed << " passed, " << failed << " failed, " << (passed + failed) << " total\n";
+  std::cout << passed << " passed, " << failed << " failed, " << (passed + failed) << " total\n"
+            << std::flush;
   return failed == 0 ? 0 : 1;
 }
 

@@ -92,6 +92,43 @@ TEST(cli_make_manifest_writes_report_and_human_output) {
   std::filesystem::remove_all(tmp, ec);
 }
 
+TEST(cli_transform_msix_manifest_uses_source_application_id) {
+  const auto tmp = std::filesystem::temp_directory_path() / "repackager-cli-xform";
+  std::error_code ec;
+  std::filesystem::remove_all(tmp, ec);
+  std::filesystem::create_directories(tmp, ec);
+  const auto src = tmp / "source.xml";
+  {
+    std::ofstream out(src);
+    out << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+           "<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\" "
+           "xmlns:uap=\"http://schemas.microsoft.com/appx/manifest/uap/windows10\">\n"
+           "  <Applications>\n"
+           "    <Application Id=\"First\" Executable=\"first.exe\">\n"
+           "      <Extensions><uap:Extension Category=\"windows.fileTypeAssociation\">"
+           "<uap:FileTypeAssociation Name=\"firsttype\"/></uap:Extension></Extensions>\n"
+           "    </Application>\n"
+           "    <Application Id=\"Second\" Executable=\"second.exe\">\n"
+           "      <Extensions><uap:Extension Category=\"windows.protocol\">"
+           "<uap:Protocol Name=\"secondproto\"/></uap:Extension></Extensions>\n"
+           "    </Application>\n"
+           "  </Applications>\n"
+           "</Package>\n";
+  }
+  const auto dest = tmp / "out.xml";
+  const int code = run_cli(std::vector<std::string>{
+      "transform-msix-manifest", "--source", src.string(), "--name", "Contoso.Xform",
+      "--executable", "second.exe", "--application-id", "ConvertedApp",
+      "--source-application-id", "Second", "--output", dest.string()});
+  CHECK_EQ(code, 0);
+  std::ifstream in(dest);
+  std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(xml.find("secondproto") != std::string::npos);
+  CHECK(xml.find("firsttype") == std::string::npos);
+  CHECK(xml.find("ConvertedApp") != std::string::npos);
+  std::filesystem::remove_all(tmp, ec);
+}
+
 TEST(cli_retrofit_win32_sparse_prepare_only_twice) {
   const auto tmp = std::filesystem::temp_directory_path() / "repackager-prepare-only";
   std::error_code ec;

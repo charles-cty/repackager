@@ -21,6 +21,11 @@ struct ManifestRequest {
   bool allow_external_content = true;
   bool run_full_trust = true;
   bool unvirtualized_resources = true;
+  // When transforming an installed MSIX, match this source Application/@Id
+  // (not the new package application.id) for extension copy.
+  // Brace-init is required: MSVC's implicit default ctor skips a trailing
+  // class member that has no default member initializer.
+  std::string source_application_id{};
 };
 
 struct GeneratedManifest {

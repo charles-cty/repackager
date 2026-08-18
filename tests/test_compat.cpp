@@ -55,6 +55,43 @@ TEST(compat_drops_incompatible_and_keeps_valid) {
   CHECK(dropped_ips);
 }
 
+TEST(compat_multi_app_uses_source_application_id) {
+  const char* source =
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+      "<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\" "
+      "xmlns:uap=\"http://schemas.microsoft.com/appx/manifest/uap/windows10\">\n"
+      "  <Applications>\n"
+      "    <Application Id=\"First\" Executable=\"first.exe\">\n"
+      "      <Extensions>\n"
+      "        <uap:Extension Category=\"windows.fileTypeAssociation\">\n"
+      "          <uap:FileTypeAssociation Name=\"firsttype\"/>\n"
+      "        </uap:Extension>\n"
+      "      </Extensions>\n"
+      "    </Application>\n"
+      "    <Application Id=\"Second\" Executable=\"second.exe\">\n"
+      "      <Extensions>\n"
+      "        <uap:Extension Category=\"windows.protocol\">\n"
+      "          <uap:Protocol Name=\"secondproto\"/>\n"
+      "        </uap:Extension>\n"
+      "      </Extensions>\n"
+      "    </Application>\n"
+      "  </Applications>\n"
+      "</Package>\n";
+  auto doc = parse_xml(source);
+  CHECK(doc);
+  ManifestRequest req;
+  req.identity.name = "New.Name";
+  req.application.id = "ConvertedApp";
+  req.application.executable = "second.exe";
+  req.source_application_id = "Second";
+  auto tr = transform_msix_manifest_to_sparse(doc.value(), req, {});
+  CHECK(tr);
+  const auto xml = tr.value().xml;
+  CHECK(xml.find("secondproto") != std::string::npos);
+  CHECK(xml.find("firsttype") == std::string::npos);
+  CHECK(xml.find("ConvertedApp") != std::string::npos);
+}
+
 TEST(compat_validator_can_drop_failing_candidate) {
   const char* source =
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"

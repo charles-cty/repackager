@@ -21,7 +21,7 @@ enum class ExitCode : int {
 
 struct Error {
   ExitCode code = ExitCode::Internal;
-  std::string message;
+  std::string message{};
 };
 
 template <typename T>
@@ -70,7 +70,7 @@ class Expected {
 struct Status {
   bool ok = true;
   ExitCode code = ExitCode::Success;
-  std::string message;
+  std::string message{};
 
   static Status success(std::string message = {}) {
     return Status{true, ExitCode::Success, std::move(message)};

@@ -28,7 +28,7 @@ struct PackageIdentity {
   std::string publisher{kUnsignedPublisher};
   std::string version{"1.0.0.0"};
   Architecture architecture = Architecture::Neutral;
-  std::string resource_id;
+  std::string resource_id{};
 };
 
 struct ApplicationDeclaration {
@@ -36,8 +36,8 @@ struct ApplicationDeclaration {
   std::string executable;
   RuntimeBehavior runtime = RuntimeBehavior::Win32App;
   TrustLevel trust = TrustLevel::MediumIL;
-  std::string display_name;
-  std::string description;
+  std::string display_name{};
+  std::string description{};
 };
 
 struct SourceMetadata {
@@ -51,8 +51,8 @@ struct SourceMetadata {
 struct Diagnostic {
   enum class Severity { Info, Warning, Error };
   Severity severity = Severity::Warning;
-  std::string code;
-  std::string message;
+  std::string code{};
+  std::string message{};
 };
 
 struct CreatedPath {
@@ -65,9 +65,9 @@ struct OperationJournal {
   std::string command;
   std::vector<std::string> created_paths;
   bool registered = false;
-  std::string package_full_name;
+  std::string package_full_name{};
   std::string rollback_status{"none"};
-  std::string journal_path;
+  std::string journal_path{};
 };
 
 struct Receipt {
@@ -85,10 +85,10 @@ struct Receipt {
   std::vector<Diagnostic> warnings;
   bool elevated = false;
   std::string rollback_status{"none"};
-  SourceMetadata source;
-  std::string launch_result;
-  std::string output_root;
-  std::string external_location;
+  SourceMetadata source{};
+  std::string launch_result{};
+  std::string output_root{};
+  std::string external_location{};
 };
 
 std::string_view to_string(LayoutKind kind);

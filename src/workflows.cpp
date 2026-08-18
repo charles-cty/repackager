@@ -391,12 +391,17 @@ int workflow_retrofit_win32_inplace(const ParsedCommand& cmd, Report& report) {
   write_journal(journal_path, journal);
   persist_receipts(rec, {}, true, directory);
 
-  const auto assets_dir = directory / "RepackagerAssets" / rec.operation_id;
+  const auto assets_root = directory / "RepackagerAssets";
+  const auto assets_dir = assets_root / rec.operation_id;
+  // Journal the directory first so reverse rollback deletes files then the dir
+  // (and remove_all still works if children remain).
+  std::filesystem::create_directories(assets_dir, ec);
+  record_created(rec, journal, assets_root);
+  record_created(rec, journal, assets_dir);
   auto assets = generate_assets(assets_dir, exe, name, &journal);
   if (!assets) return rollback_and_fail(report, rec, journal, assets.code(), assets.message());
   rec.created_paths.insert(rec.created_paths.end(), assets.value().created.begin(),
                            assets.value().created.end());
-  record_created(rec, journal, assets_dir);
 
   ManifestRequest mreq;
   mreq.layout = LayoutKind::LooseFull;
@@ -593,6 +598,7 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   mreq.identity = rec.identity;
   mreq.application.id = rec.application_id;
   mreq.application.executable = selected.executable;
+  mreq.source_application_id = source_app_id;
   mreq.application.display_name = cmd.get("display-name").value_or(
       selected.display_name.empty() ? name : selected.display_name);
 

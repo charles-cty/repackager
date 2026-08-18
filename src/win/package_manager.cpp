@@ -149,18 +149,18 @@ Status win_unregister_package(std::string_view package_full_name) {
     const auto hr = result.ExtendedErrorCode();
     if (FAILED(hr)) {
       const auto err = narrow(result.ErrorText().c_str());
-      const long code = static_cast<long>(hr.value);
-      // Idempotent cleanup: prepare-only receipts still carry a computed full name.
-      if (code == static_cast<long>(0x80073CFD) || code == static_cast<long>(0x80073D19) ||
-          err.find("not installed") != std::string::npos ||
-          err.find("未安装") != std::string::npos) {
+      if (is_package_not_installed_status(hr.value, err)) {
         return Status::success();
       }
       return Status::fail(ExitCode::Environment, "RemovePackageAsync failed: " + err);
     }
     return Status::success();
   } catch (const winrt::hresult_error& e) {
-    return Status::fail(ExitCode::Environment, narrow(e.message().c_str()));
+    const auto err = narrow(e.message().c_str());
+    if (is_package_not_installed_status(e.code().value, err)) {
+      return Status::success();
+    }
+    return Status::fail(ExitCode::Environment, err);
   }
 }
 

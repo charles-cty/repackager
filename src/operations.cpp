@@ -324,6 +324,7 @@ int op_transform_msix_manifest(const ParsedCommand& cmd, Report& report) {
   req.application.executable = cmd.get("executable").value_or("app.exe");
   req.application.id = cmd.get("application-id").value_or(sanitize_application_id(
       std::filesystem::path(req.application.executable).stem().string()));
+  req.source_application_id = cmd.get("source-application-id").value_or("");
   req.application.display_name = cmd.get("display-name").value_or(name);
   ManifestValidator validator;
   auto makeappx = locate_makeappx_exe();
@@ -449,6 +450,33 @@ int op_remove_retrofit(const ParsedCommand& cmd, Report& report) {
                               ? read_receipt_file(*cmd.get("receipt"))
                               : load_authoritative_receipt(name);
   if (!rec) return fail(report, rec.code(), rec.message());
+
+  std::filesystem::path dir = rec.value().output_root.empty()
+                                  ? std::filesystem::path(rec.value().source.path)
+                                  : std::filesystem::path(rec.value().output_root);
+  if (dir.empty() && !rec.value().created_paths.empty()) {
+    dir = std::filesystem::path(rec.value().created_paths.front().path).parent_path();
+  }
+  if (!dir.empty() && needs_elevation_for_write(dir) && !process_is_elevated()) {
+    ElevationRequest ereq;
+    ereq.operation_id =
+        rec.value().operation_id.empty() ? new_operation_id() : rec.value().operation_id;
+    ereq.command = "remove-retrofit";
+    ereq.directory = dir.string();
+    ereq.args.push_back("--name");
+    ereq.args.push_back(name);
+    if (auto r = cmd.get("receipt")) {
+      ereq.args.push_back("--receipt");
+      ereq.args.push_back(*r);
+    }
+    if (auto r = cmd.get("report")) {
+      ereq.args.push_back("--report");
+      ereq.args.push_back(*r);
+    }
+    auto code = elevate_self_and_wait(ereq);
+    if (!code) return fail(report, code.code(), code.message());
+    return finish(report, code.value());
+  }
 
   OperationJournal journal;
   journal.operation_id = rec.value().operation_id;

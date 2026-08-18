@@ -1,16 +1,22 @@
 #include "pe_builder.hpp"
+#include "repackager/assets.hpp"
 #include "repackager/cli.hpp"
 #include "repackager/hash.hpp"
 #include "repackager/journal.hpp"
 #include "repackager/manifest.hpp"
 #include "repackager/package_io.hpp"
 #include "repackager/paths.hpp"
+#include "repackager/receipt.hpp"
+#include "repackager/register.hpp"
 #include "repackager/stage.hpp"
 #include "repackager/zip.hpp"
 #include "test_support.hpp"
 
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 using namespace repackager;
 
@@ -117,6 +123,123 @@ TEST(rollback_workflow_prepare_fault_after_journal) {
   CHECK_EQ(sha256_file_hex(src / "probe.exe"), original_hash);
   std::filesystem::remove_all(root, ec);
 }
+
+TEST(rollback_removes_nonempty_journaled_directory) {
+  const auto root = std::filesystem::temp_directory_path() / "repackager-rb-dir";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto assets = root / "RepackagerAssets" / "op1";
+  std::filesystem::create_directories(assets, ec);
+  {
+    std::ofstream(assets / "StoreLogo.png") << "png";
+    std::ofstream(assets / "Square44x44Logo.png") << "png";
+  }
+  const auto original = root / "probe.exe";
+  {
+    std::ofstream(original) << "MZ";
+  }
+  OperationJournal j;
+  j.operation_id = "rb-dir";
+  // Old WF2 order: files first, directory last. remove() on a full dir used to leave it.
+  j.created_paths.push_back((assets / "StoreLogo.png").string());
+  j.created_paths.push_back((assets / "Square44x44Logo.png").string());
+  j.created_paths.push_back(assets.string());
+  j.created_paths.push_back((root / "RepackagerAssets").string());
+  auto st = rollback_journal(j, {}, original);
+  CHECK(st);
+  CHECK(std::filesystem::exists(original));
+  CHECK(!std::filesystem::exists(assets));
+  CHECK(!std::filesystem::exists(root / "RepackagerAssets"));
+  std::filesystem::remove_all(root, ec);
+}
+
+TEST(unregister_treats_not_installed_hresults_as_success) {
+  CHECK(is_package_not_installed_status(static_cast<std::int32_t>(0x80073CF1), ""));
+  CHECK(is_package_not_installed_status(static_cast<std::int32_t>(0x80073CFD), ""));
+  CHECK(is_package_not_installed_status(static_cast<std::int32_t>(0x80073D19), ""));
+  CHECK(is_package_not_installed_status(0, "Windows cannot remove X because it is not installed"));
+  CHECK(is_package_not_installed_status(
+      0, "Windows 无法删除 Contoso.Fixture_1.0.0.0_x64__mhb6sk8yz7b6a，因为当前用户未安装该程序包。"));
+  CHECK(!is_package_not_installed_status(static_cast<std::int32_t>(0x80073D02), "packages in use"));
+}
+
+TEST(remove_retrofit_deletes_recorded_asset_dir) {
+  const auto root = std::filesystem::temp_directory_path() / "repackager-rm-assets";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto data = root / "data";
+  const auto app = root / "app";
+  std::filesystem::create_directories(app, ec);
+  const char* prev_data = std::getenv("REPACKAGER_DATA_DIR");
+  const std::string prev_data_s = prev_data ? prev_data : "";
+#ifdef _WIN32
+  _putenv_s("REPACKAGER_DATA_DIR", data.string().c_str());
+#else
+  setenv("REPACKAGER_DATA_DIR", data.string().c_str(), 1);
+#endif
+  {
+    std::ofstream(app / "probe.exe") << "MZ";
+  }
+  OperationJournal journal;
+  journal.operation_id = "rm-assets";
+  auto assets = generate_assets(app / "RepackagerAssets" / "op1", {}, "Contoso.RmAssets", &journal);
+  CHECK(assets);
+  Receipt rec;
+  rec.operation_id = "rm-assets";
+  rec.command = "retrofit-win32-inplace";
+  rec.identity.name = "Contoso.RmAssets";
+  rec.output_root = app.string();
+  rec.source.path = app.string();
+  rec.created_paths = assets.value().created;
+  rec.created_paths.push_back(CreatedPath{(app / "RepackagerAssets" / "op1").string(), {}});
+  rec.created_paths.push_back(CreatedPath{(app / "RepackagerAssets").string(), {}});
+  CHECK(write_authoritative_receipt(rec));
+  const int code = run_cli(std::vector<std::string>{"remove-retrofit", "--name", "Contoso.RmAssets"});
+  CHECK_EQ(code, 0);
+  CHECK(std::filesystem::exists(app / "probe.exe"));
+  CHECK(!std::filesystem::exists(app / "RepackagerAssets"));
+#ifdef _WIN32
+  _putenv_s("REPACKAGER_DATA_DIR", prev_data_s.c_str());
+#else
+  if (prev_data_s.empty()) unsetenv("REPACKAGER_DATA_DIR");
+  else setenv("REPACKAGER_DATA_DIR", prev_data_s.c_str(), 1);
+#endif
+  std::filesystem::remove_all(root, ec);
+}
+
+#ifndef _WIN32
+TEST(remove_retrofit_elevates_for_protected_directory) {
+  const auto root = std::filesystem::temp_directory_path() / "repackager-rm-elev";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto data = root / "data";
+  const auto app = root / "app";
+  std::filesystem::create_directories(app, ec);
+  const char* prev_data = std::getenv("REPACKAGER_DATA_DIR");
+  const std::string prev_data_s = prev_data ? prev_data : "";
+  setenv("REPACKAGER_DATA_DIR", data.string().c_str(), 1);
+  Receipt rec;
+  rec.operation_id = "rm-elev";
+  rec.command = "retrofit-win32-inplace";
+  rec.identity.name = "Contoso.RmElev";
+  rec.output_root = app.string();
+  rec.source.path = app.string();
+  rec.created_paths.push_back(CreatedPath{(app / "AppxManifest.xml").string(), {}});
+  CHECK(write_authoritative_receipt(rec));
+  std::filesystem::permissions(app, std::filesystem::perms::owner_read |
+                                        std::filesystem::perms::owner_exec,
+                               std::filesystem::perm_options::replace, ec);
+  const int code = run_cli(std::vector<std::string>{"remove-retrofit", "--name", "Contoso.RmElev"});
+  std::filesystem::permissions(app, std::filesystem::perms::owner_all,
+                               std::filesystem::perm_options::replace, ec);
+  // Linux has no ShellExecuteExW runas; the shipped elevate path returns Environment.
+  CHECK(code == static_cast<int>(ExitCode::Environment) ||
+        code == static_cast<int>(ExitCode::Elevation));
+  if (prev_data_s.empty()) unsetenv("REPACKAGER_DATA_DIR");
+  else setenv("REPACKAGER_DATA_DIR", prev_data_s.c_str(), 1);
+  std::filesystem::remove_all(root, ec);
+}
+#endif
 
 TEST(package_io_both_backends_inspect_zip_msix) {
   const auto root = std::filesystem::temp_directory_path() / "repackager-msix-io";

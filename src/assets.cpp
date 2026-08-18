@@ -119,17 +119,28 @@ Expected<AssetSet> generate_assets(const std::filesystem::path& output_dir,
   (void)exe;
 #endif
 
-  auto write_png = [&](const std::filesystem::path& path, int w, int h) {
-    if (std::filesystem::exists(path)) return Status::success();
-    const auto bytes = make_placeholder_png(w, h, seed);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return Status::fail(ExitCode::Internal, "cannot write " + path.string());
-    out.write(reinterpret_cast<const char*>(bytes.data()),
-              static_cast<std::streamsize>(bytes.size()));
-    CreatedPath cp{path.string(), sha256_file_hex(path)};
-    set.created.push_back(cp);
-    if (journal) journal_record_path(*journal, path);
+  auto record = [&](const std::filesystem::path& path) -> Status {
+    if (!std::filesystem::exists(path, ec)) {
+      return Status::fail(ExitCode::Internal, "asset missing after write: " + path.string());
+    }
+    CreatedPath cp;
+    cp.path = path.string();
+    if (std::filesystem::is_regular_file(path, ec)) cp.sha256 = sha256_file_hex(path);
+    set.created.push_back(std::move(cp));
+    if (journal) return journal_record_path(*journal, path);
     return Status::success();
+  };
+
+  auto write_png = [&](const std::filesystem::path& path, int w, int h) {
+    if (!std::filesystem::exists(path, ec)) {
+      const auto bytes = make_placeholder_png(w, h, seed);
+      std::ofstream out(path, std::ios::binary | std::ios::trunc);
+      if (!out) return Status::fail(ExitCode::Internal, "cannot write " + path.string());
+      out.write(reinterpret_cast<const char*>(bytes.data()),
+                static_cast<std::streamsize>(bytes.size()));
+    }
+    // Record WIC-extracted and placeholder PNGs alike so remove-retrofit deletes them.
+    return record(path);
   };
 
   if (auto s = write_png(set.store_logo, 50, 50); !s) {

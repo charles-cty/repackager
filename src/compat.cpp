@@ -2,6 +2,8 @@
 
 #include "repackager/manifest.hpp"
 
+#include <vector>
+
 namespace repackager {
 namespace {
 
@@ -138,30 +140,38 @@ Expected<TransformResult> transform_msix_manifest_to_sparse(
     auto* dest_apps = result.manifest.root.find_child("Applications");
     if (dest_apps && !dest_apps->children.empty()) {
       auto& dest_app = dest_apps->children.front();
-      // Copy selected source application's non-reserved children (extensions).
+      // Copy the selected *source* application's extensions. The new package
+      // Application/@Id may differ from --source-application-id.
       const XmlNode* src_app = nullptr;
-      if (apps->children.size() == 1) {
-        src_app = &apps->children.front();
+      const std::string wanted = !request.source_application_id.empty()
+                                     ? request.source_application_id
+                                     : request.application.id;
+      std::vector<const XmlNode*> source_apps;
+      for (const auto& a : apps->children) {
+        if (a.name == "Application") source_apps.push_back(&a);
+      }
+      if (source_apps.size() == 1) {
+        src_app = source_apps.front();
       } else {
-        for (const auto& a : apps->children) {
-          if (a.attr("Id") == request.application.id ||
-              a.attr("Id") == request.application.executable) {
-            src_app = &a;
+        for (const auto* a : source_apps) {
+          if (a->attr("Id") == wanted) {
+            src_app = a;
             break;
           }
         }
-        if (!src_app) src_app = &apps->children.front();
       }
-      if (const auto* app_exts = src_app->find_child("Extensions")) {
-        XmlNode* dest_exts = dest_app.find_child("Extensions");
-        if (!dest_exts) {
-          XmlNode n;
-          n.name = "Extensions";
-          dest_app.children.push_back(std::move(n));
-          dest_exts = &dest_app.children.back();
-        }
-        for (const auto& c : app_exts->children) {
-          try_add(*dest_exts, c, "AppExtension/" + c.attr("Category", c.name));
+      if (src_app) {
+        if (const auto* app_exts = src_app->find_child("Extensions")) {
+          XmlNode* dest_exts = dest_app.find_child("Extensions");
+          if (!dest_exts) {
+            XmlNode n;
+            n.name = "Extensions";
+            dest_app.children.push_back(std::move(n));
+            dest_exts = &dest_app.children.back();
+          }
+          for (const auto& c : app_exts->children) {
+            try_add(*dest_exts, c, "AppExtension/" + c.attr("Category", c.name));
+          }
         }
       }
     }

@@ -3,6 +3,8 @@
 #include "repackager/identity.hpp"
 #include "repackager/xml.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 
 #ifdef _WIN32
@@ -127,6 +129,31 @@ Status activate_aumid(std::string_view aumid, std::string_view arguments) {
                       "IApplicationActivationManager is only available on Windows (" +
                           std::string(aumid) + ")");
 #endif
+}
+
+bool is_package_not_installed_status(std::int32_t hresult, std::string_view message) {
+  const auto hr = static_cast<std::uint32_t>(hresult);
+  switch (hr) {
+    case 0x80073CF1u:  // ERROR_INSTALL_PACKAGE_NOT_FOUND
+    case 0x80073CFDu:
+    case 0x80073D19u:
+    case 0x80070490u:  // HRESULT_FROM_WIN32(ERROR_NOT_FOUND)
+      return true;
+    default:
+      break;
+  }
+  auto contains_ci = [](std::string_view hay, std::string_view needle) {
+    if (needle.empty() || hay.size() < needle.size()) return false;
+    auto fold = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
+    return std::search(hay.begin(), hay.end(), needle.begin(), needle.end(),
+                       [&](char a, char b) { return fold(static_cast<unsigned char>(a)) ==
+                                                    fold(static_cast<unsigned char>(b)); }) !=
+           hay.end();
+  };
+  if (contains_ci(message, "not installed")) return true;
+  if (contains_ci(message, "not registered")) return true;
+  if (message.find("未安装") != std::string_view::npos) return true;
+  return false;
 }
 
 Status launch_exe(const std::filesystem::path& exe) {
