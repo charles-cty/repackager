@@ -1,6 +1,7 @@
 #include "repackager/manifest.hpp"
 
 #include "repackager/identity.hpp"
+#include "repackager/paths.hpp"
 
 #include <algorithm>
 
@@ -96,7 +97,7 @@ XmlNode make_capabilities(const ManifestRequest& req) {
 XmlNode make_application(const ManifestRequest& req) {
   auto app = elem("Application");
   app.set_attr("Id", req.application.id);
-  app.set_attr("Executable", req.application.executable);
+  app.set_attr("Executable", win_relative_path(req.application.executable));
   // packagedClassicApp activation (IApplicationActivationManager / Start) needs
   // a real EntryPoint. Sparse win32App omits it. Overlay treats this as reserved.
   if (req.application.runtime == RuntimeBehavior::PackagedClassicApp) {

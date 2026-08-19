@@ -89,6 +89,10 @@ TEST(cli_make_manifest_writes_report_and_human_output) {
   std::ifstream rin(report);
   std::string rt((std::istreambuf_iterator<char>(rin)), std::istreambuf_iterator<char>());
   CHECK(rt.find("make-manifest") != std::string::npos);
+  const int abs = run_cli(std::vector<std::string>{
+      "make-manifest", "--layout", "loose_full", "--name", "Contoso.Cli",
+      "--executable", R"(C:\Program Files\ZCode\ZCode.exe)", "--output", out.string()});
+  CHECK_EQ(abs, static_cast<int>(ExitCode::Validation));
   std::filesystem::remove_all(tmp, ec);
 }
 

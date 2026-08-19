@@ -65,6 +65,8 @@ TEST(xml_loose_manifest_packaged_classic) {
   CHECK(gen.xml.find("AllowExternalContent") == std::string::npos);
   CHECK(gen.xml.find("x64") != std::string::npos);
   CHECK(gen.xml.find("EntryPoint=\"Windows.FullTrustApplication\"") != std::string::npos);
+  CHECK(gen.xml.find("Executable=\"app.exe\"") != std::string::npos);
+  CHECK(gen.xml.find("Executable=\"C:") == std::string::npos);
 
   req.application.trust = TrustLevel::AppContainer;
   auto ac = generate_loose_manifest(req);

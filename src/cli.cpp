@@ -32,7 +32,7 @@ const CommandInfo kCommands[] = {
      "patch-exe-identity --input FILE --name NAME --publisher PUB --application-id ID "
      "[--accept-signature-loss] [--report FILE]"},
     {Command::MakeManifest, "make-manifest",
-     "make-manifest --layout sparse_external|loose_full --name NAME --executable REL "
+     "make-manifest --layout sparse_external|loose_full --name NAME --executable RELPATH "
      "[--version V] [--display-name T] [--application-id ID] [--architecture A] "
      "[--appcontainer] --output FILE [--report FILE]"},
     {Command::TransformMsixManifest, "transform-msix-manifest",
@@ -50,11 +50,11 @@ const CommandInfo kCommands[] = {
     {Command::RemoveRetrofit, "remove-retrofit",
      "remove-retrofit --name NAME [--receipt FILE] [--report FILE]"},
     {Command::RetrofitWin32Sparse, "retrofit-win32-sparse",
-     "retrofit-win32-sparse --source DIR --executable REL --output DIR --name NAME "
+     "retrofit-win32-sparse --source DIR --executable PATH --output DIR --name NAME "
      "[--display-name T] [--application-id ID] [--overlay-manifest FILE] "
      "[--overlay-files DIR] [--accept-signature-loss] [--prepare-only] [--launch]"},
     {Command::RetrofitWin32Inplace, "retrofit-win32-inplace",
-     "retrofit-win32-inplace --directory DIR --executable REL --name NAME "
+     "retrofit-win32-inplace --directory DIR --executable PATH --name NAME "
      "[--display-name T] [--application-id ID] [--appcontainer] "
      "[--overlay-manifest FILE] [--overlay-files DIR] [--prepare-only] [--launch]"},
     {Command::RetrofitMsixSparse, "retrofit-msix-sparse",

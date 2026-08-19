@@ -116,4 +116,64 @@ std::string join_win(std::string_view a, std::string_view b) {
   return std::string(a) + "\\" + std::string(b);
 }
 
+std::string win_relative_path(const std::filesystem::path& path) {
+  auto s = path.generic_string();
+  while (s.size() >= 2 && s[0] == '.' && (s[1] == '/' || s[1] == '\\')) s.erase(0, 2);
+  while (!s.empty() && (s.front() == '/' || s.front() == '\\')) s.erase(s.begin());
+  for (char& c : s)
+    if (c == '/') c = '\\';
+  return s;
+}
+
+Status validate_package_relative_executable(std::string_view executable) {
+  if (executable.empty()) {
+    return Status::fail(ExitCode::Validation, "Executable must be a package-relative path");
+  }
+  for (unsigned char c : executable) {
+    if (c < 0x20 || c == '<' || c == '>' || c == '"' || c == ':' || c == '%' || c == '|' ||
+        c == '?' || c == '*') {
+      return Status::fail(ExitCode::Validation,
+                          "Executable must be package-relative (got '" + std::string(executable) +
+                              "'); pass a path inside the source directory, not a drive path");
+    }
+  }
+  return Status::success();
+}
+
+Expected<ResolvedExecutable> resolve_executable_under_root(
+    const std::filesystem::path& root, const std::filesystem::path& executable) {
+  if (root.empty() || executable.empty()) {
+    return Expected<ResolvedExecutable>::fail(ExitCode::Usage, "executable path is empty");
+  }
+  const auto candidate = executable.is_absolute() ? executable : (root / executable);
+  if (!path_contained(root, candidate)) {
+    return Expected<ResolvedExecutable>::fail(ExitCode::Validation,
+                                              "executable escapes package directory");
+  }
+  auto rel = make_relative(root, candidate);
+  if (rel.empty() || rel == "." || rel == "..") {
+    return Expected<ResolvedExecutable>::fail(
+        ExitCode::Validation, "executable must be a file inside the package directory");
+  }
+  for (const auto& part : rel) {
+    if (part == "..") {
+      return Expected<ResolvedExecutable>::fail(ExitCode::Validation,
+                                                "executable escapes package directory");
+    }
+  }
+  ResolvedExecutable out;
+  out.relative = rel;
+  out.absolute = normalize_path(candidate);
+  out.manifest = win_relative_path(rel);
+  if (auto st = validate_package_relative_executable(out.manifest); !st) {
+    return Expected<ResolvedExecutable>::fail(st.code, st.message);
+  }
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(out.absolute, ec)) {
+    return Expected<ResolvedExecutable>::fail(ExitCode::NotFound,
+                                              "executable not found: " + out.absolute.string());
+  }
+  return Expected<ResolvedExecutable>::ok(std::move(out));
+}
+
 }  // namespace repackager

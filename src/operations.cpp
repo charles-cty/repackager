@@ -284,7 +284,10 @@ int op_make_manifest(const ParsedCommand& cmd, Report& report) {
     if (!p) return fail(report, p.code(), p.message());
     req.identity.architecture = p.value();
   }
-  req.application.executable = exe;
+  if (auto st = validate_package_relative_executable(exe); !st) {
+    return fail(report, st.code, st.message);
+  }
+  req.application.executable = win_relative_path(exe);
   req.application.id = cmd.get("application-id").value_or(sanitize_application_id(
       std::filesystem::path(exe).stem().string()));
   req.application.display_name = cmd.get("display-name").value_or(req.identity.name);
@@ -321,7 +324,11 @@ int op_transform_msix_manifest(const ParsedCommand& cmd, Report& report) {
   req.identity.name = name;
   req.identity.publisher = cmd.get("publisher").value_or(std::string(kUnsignedPublisher));
   req.identity.version = cmd.get("version").value_or("1.0.0.0");
-  req.application.executable = cmd.get("executable").value_or("app.exe");
+  req.application.executable =
+      win_relative_path(cmd.get("executable").value_or("app.exe"));
+  if (auto st = validate_package_relative_executable(req.application.executable); !st) {
+    return fail(report, st.code, st.message);
+  }
   req.application.id = cmd.get("application-id").value_or(sanitize_application_id(
       std::filesystem::path(req.application.executable).stem().string()));
   req.source_application_id = cmd.get("source-application-id").value_or("");

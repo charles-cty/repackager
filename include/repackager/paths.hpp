@@ -34,4 +34,19 @@ std::filesystem::path make_relative(const std::filesystem::path& root,
 
 std::string join_win(std::string_view a, std::string_view b);
 
+// Appx Application/@Executable: relative, backslashes, no drive colon.
+std::string win_relative_path(const std::filesystem::path& path);
+Status validate_package_relative_executable(std::string_view executable);
+
+struct ResolvedExecutable {
+  std::filesystem::path absolute;
+  std::filesystem::path relative;
+  std::string manifest{};
+};
+
+// Accepts a path relative to `root`, or an absolute path contained in `root`.
+// `manifest` is always package-relative (never `C:\...`).
+Expected<ResolvedExecutable> resolve_executable_under_root(
+    const std::filesystem::path& root, const std::filesystem::path& executable);
+
 }  // namespace repackager

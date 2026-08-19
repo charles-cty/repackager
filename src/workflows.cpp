@@ -142,19 +142,17 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   const auto source = opt_path(cmd, "source");
   const auto output = opt_path(cmd, "output");
   const auto name = cmd.require("name");
-  const auto rel_exe = cmd.require("executable");
-  if (source.empty() || output.empty() || name.empty() || rel_exe.empty()) {
+  const auto exe_arg = cmd.require("executable");
+  if (source.empty() || output.empty() || name.empty() || exe_arg.empty()) {
     return fail_msg(report, ExitCode::Usage,
                     "require --source, --executable, --output, --name");
   }
-  if (!path_contained(source, source / rel_exe)) {
-    return fail_msg(report, ExitCode::Validation, "executable escapes source directory");
-  }
-  const auto source_exe = source / rel_exe;
+  auto resolved = resolve_executable_under_root(source, exe_arg);
+  if (!resolved) return fail_msg(report, resolved.code(), resolved.message());
+  const auto rel_exe = resolved.value().relative;
+  const auto source_exe = resolved.value().absolute;
+  const auto manifest_exe = resolved.value().manifest;
   std::error_code ec;
-  if (!std::filesystem::exists(source_exe, ec)) {
-    return fail_msg(report, ExitCode::NotFound, "executable not found: " + source_exe.string());
-  }
   if (!directory_is_absent_or_empty(output)) {
     return fail_msg(report, ExitCode::Conflict, "output must be absent or empty");
   }
@@ -177,7 +175,7 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
       pe.value().file_version.empty() ? "1.0.0.0" : pe.value().file_version;
   rec.identity.architecture = Architecture::Neutral;
   rec.application_id = cmd.get("application-id").value_or(
-      sanitize_application_id(std::filesystem::path(rel_exe).stem().string()));
+      sanitize_application_id(rel_exe.stem().string()));
   rec.identity = rec.identity;
   rec.source.kind = "win32-dir";
   rec.source.path = source.string();
@@ -232,7 +230,7 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   mreq.layout = LayoutKind::SparseExternal;
   mreq.identity = rec.identity;
   mreq.application.id = rec.application_id;
-  mreq.application.executable = rel_exe;
+  mreq.application.executable = manifest_exe;
   mreq.application.display_name = cmd.get("display-name").value_or(
       pe.value().file_description.empty()
           ? (pe.value().product_name.empty() ? name : pe.value().product_name)
@@ -313,18 +311,16 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
 int workflow_retrofit_win32_inplace(const ParsedCommand& cmd, Report& report) {
   const auto directory = opt_path(cmd, "directory");
   const auto name = cmd.require("name");
-  const auto rel_exe = cmd.require("executable");
-  if (directory.empty() || name.empty() || rel_exe.empty()) {
+  const auto exe_arg = cmd.require("executable");
+  if (directory.empty() || name.empty() || exe_arg.empty()) {
     return fail_msg(report, ExitCode::Usage, "require --directory, --executable, --name");
   }
-  if (!path_contained(directory, directory / rel_exe)) {
-    return fail_msg(report, ExitCode::Validation, "executable escapes directory");
-  }
-  const auto exe = directory / rel_exe;
+  auto resolved = resolve_executable_under_root(directory, exe_arg);
+  if (!resolved) return fail_msg(report, resolved.code(), resolved.message());
+  const auto rel_exe = resolved.value().relative;
+  const auto exe = resolved.value().absolute;
+  const auto manifest_exe = resolved.value().manifest;
   std::error_code ec;
-  if (!std::filesystem::exists(exe, ec)) {
-    return fail_msg(report, ExitCode::NotFound, "executable not found");
-  }
   if (std::filesystem::exists(directory / "AppxManifest.xml", ec)) {
     return fail_msg(report, ExitCode::Conflict, "directory already contains AppxManifest.xml");
   }
@@ -370,7 +366,7 @@ int workflow_retrofit_win32_inplace(const ParsedCommand& cmd, Report& report) {
       pe.value().file_version.empty() ? "1.0.0.0" : pe.value().file_version;
   rec.identity.architecture = pe.value().architecture;
   rec.application_id = cmd.get("application-id").value_or(
-      sanitize_application_id(std::filesystem::path(rel_exe).stem().string()));
+      sanitize_application_id(rel_exe.stem().string()));
   rec.source.kind = "win32-inplace";
   rec.source.path = directory.string();
   rec.output_root = directory.string();
@@ -407,24 +403,16 @@ int workflow_retrofit_win32_inplace(const ParsedCommand& cmd, Report& report) {
   mreq.layout = LayoutKind::LooseFull;
   mreq.identity = rec.identity;
   mreq.application.id = rec.application_id;
-  mreq.application.executable = rel_exe;
+  mreq.application.executable = manifest_exe;
   mreq.application.trust = rec.trust;
   mreq.application.display_name = cmd.get("display-name").value_or(
       pe.value().file_description.empty() ? name : pe.value().file_description);
-  mreq.logo = (std::filesystem::path("RepackagerAssets") / rec.operation_id / "StoreLogo.png")
-                  .generic_string();
-  // Manifest paths are Windows-style.
-  auto win_rel = [](const std::filesystem::path& p) {
-    auto s = p.generic_string();
-    for (char& c : s)
-      if (c == '/') c = '\\';
-    return s;
-  };
-  mreq.logo = win_rel(std::filesystem::path("RepackagerAssets") / rec.operation_id / "StoreLogo.png");
-  mreq.square44 =
-      win_rel(std::filesystem::path("RepackagerAssets") / rec.operation_id / "Square44x44Logo.png");
-  mreq.square150 =
-      win_rel(std::filesystem::path("RepackagerAssets") / rec.operation_id / "Square150x150Logo.png");
+  mreq.logo = win_relative_path(std::filesystem::path("RepackagerAssets") / rec.operation_id /
+                                "StoreLogo.png");
+  mreq.square44 = win_relative_path(std::filesystem::path("RepackagerAssets") / rec.operation_id /
+                                    "Square44x44Logo.png");
+  mreq.square150 = win_relative_path(std::filesystem::path("RepackagerAssets") / rec.operation_id /
+                                     "Square150x150Logo.png");
   auto gen = generate_loose_manifest(mreq);
   const auto manifest_path = directory / "AppxManifest.xml";
   if (auto st = write_text(manifest_path, gen.xml); !st) {
@@ -610,7 +598,10 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   mreq.layout = LayoutKind::SparseExternal;
   mreq.identity = rec.identity;
   mreq.application.id = rec.application_id;
-  mreq.application.executable = selected.executable;
+  mreq.application.executable = win_relative_path(selected.executable);
+  if (auto st = validate_package_relative_executable(mreq.application.executable); !st) {
+    return rollback_and_fail(report, rec, journal, st.code, st.message);
+  }
   mreq.source_application_id = source_app_id;
   mreq.application.display_name = cmd.get("display-name").value_or(
       selected.display_name.empty() ? name : selected.display_name);
