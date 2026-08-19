@@ -422,7 +422,14 @@ int op_status(const ParsedCommand& cmd, Report& report) {
     report_kv(report, "rollback", rec.value().rollback_status);
     if (!rec.value().package_full_name.empty()) {
       auto st = query_package_status(rec.value().package_full_name);
-      if (st) report_kv(report, "registered", st.value().registered ? "yes" : "no");
+      if (st) {
+        report_kv(report, "registered", st.value().registered ? "yes" : "no");
+        if (st.value().registered) {
+          report_kv(report, "packageOk", st.value().ok ? "yes" : "no");
+          report_kv(report, "needsRemediation", st.value().needs_remediation ? "yes" : "no");
+          report_kv(report, "modified", st.value().modified ? "yes" : "no");
+        }
+      }
     }
     report.summary = rec.value().package_full_name.empty() ? name : rec.value().package_full_name;
     return finish(report, 0);

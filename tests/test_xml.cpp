@@ -64,9 +64,21 @@ TEST(xml_loose_manifest_packaged_classic) {
   CHECK(gen.xml.find("runFullTrust") != std::string::npos);
   CHECK(gen.xml.find("AllowExternalContent") == std::string::npos);
   CHECK(gen.xml.find("x64") != std::string::npos);
+  CHECK(gen.xml.find("EntryPoint=\"Windows.FullTrustApplication\"") != std::string::npos);
 
   req.application.trust = TrustLevel::AppContainer;
   auto ac = generate_loose_manifest(req);
   CHECK(ac.xml.find("appContainer") != std::string::npos);
   CHECK(ac.xml.find("runFullTrust") == std::string::npos);
+  CHECK(ac.xml.find("EntryPoint=\"Windows.PartialTrustApplication\"") != std::string::npos);
+}
+
+TEST(xml_sparse_manifest_omits_entrypoint) {
+  ManifestRequest req;
+  req.identity.name = "Contoso.Probe";
+  req.application.id = "Probe";
+  req.application.executable = "probe.exe";
+  auto gen = generate_sparse_manifest(req);
+  CHECK(gen.xml.find("EntryPoint") == std::string::npos);
+  CHECK(gen.xml.find("win32App") != std::string::npos);
 }

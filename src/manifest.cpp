@@ -97,6 +97,13 @@ XmlNode make_application(const ManifestRequest& req) {
   auto app = elem("Application");
   app.set_attr("Id", req.application.id);
   app.set_attr("Executable", req.application.executable);
+  // packagedClassicApp activation (IApplicationActivationManager / Start) needs
+  // a real EntryPoint. Sparse win32App omits it. Overlay treats this as reserved.
+  if (req.application.runtime == RuntimeBehavior::PackagedClassicApp) {
+    app.set_attr("EntryPoint", req.application.trust == TrustLevel::AppContainer
+                                   ? "Windows.PartialTrustApplication"
+                                   : "Windows.FullTrustApplication");
+  }
   app.set_attr("TrustLevel", std::string(to_string(req.application.trust)),
                std::string(kNsUap10));
   app.set_attr("RuntimeBehavior", std::string(to_string(req.application.runtime)),

@@ -465,7 +465,20 @@ int workflow_retrofit_win32_inplace(const ParsedCommand& cmd, Report& report) {
     }
   }
 
-  persist_receipts(rec, {}, true, directory);
+  // After RegisterPackageByUriAsync the directory is the package. Rewriting the
+  // namespaced receipt (or any other file) there marks the package Modified and
+  // Windows shows the Repair dialog on launch. Post-register updates go only to
+  // the LOCALAPPDATA authoritative receipt.
+  write_authoritative_receipt(rec);
+  if (!cmd.has_flag("prepare-only") && !rec.package_full_name.empty()) {
+    auto st = query_package_status(rec.package_full_name);
+    if (st && st.value().registered &&
+        (st.value().needs_remediation || st.value().modified || !st.value().ok)) {
+      return rollback_and_fail(
+          report, rec, journal, ExitCode::Environment,
+          "registered loose package needs remediation (payload modified after register)");
+    }
+  }
   report.summary = rec.package_full_name;
   report_kv(report, "manifest", manifest_path.string());
   report_kv(report, "aumid", rec.aumid);

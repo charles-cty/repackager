@@ -20,6 +20,7 @@
 #include <winrt/Windows.Management.Deployment.h>
 #include <winrt/Windows.ApplicationModel.h>
 
+#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -181,6 +182,13 @@ Expected<PackageStatus> win_query_package_status(std::string_view name_or_full) 
         const auto v = pkg.Id().Version();
         st.version = std::to_string(v.Major) + "." + std::to_string(v.Minor) + "." +
                      std::to_string(v.Build) + "." + std::to_string(v.Revision);
+        try {
+          const auto ps = pkg.Status();
+          st.ok = ps.VerifyIsOK();
+          st.needs_remediation = ps.NeedsRemediation();
+          st.modified = ps.Modified();
+        } catch (...) {
+        }
         return Expected<PackageStatus>::ok(std::move(st));
       }
     }
@@ -232,7 +240,10 @@ Status win_activate_aumid(std::string_view aumid, std::string_view arguments) {
   aam->Release();
   if (com_inited) CoUninitialize();
   if (FAILED(hr)) {
-    return Status::fail(ExitCode::Environment, "ActivateApplication failed");
+    char hex[16];
+    std::snprintf(hex, sizeof(hex), "0x%08lX", static_cast<unsigned long>(hr));
+    return Status::fail(ExitCode::Environment,
+                        std::string("ActivateApplication failed HRESULT=") + hex);
   }
   return Status::success();
 }

@@ -37,6 +37,9 @@ struct PackageStatus {
   std::string version;
   std::vector<std::string> aumids;
   bool signature_kind_unsigned = false;
+  bool ok = true;
+  bool needs_remediation{};
+  bool modified{};
 };
 
 struct InstalledPackage {
