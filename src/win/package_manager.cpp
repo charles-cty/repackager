@@ -173,10 +173,11 @@ Expected<PackageStatus> win_query_package_status(std::string_view name_or_full) 
     for (const auto& pkg : pm.FindPackagesForUser(L"")) {
       const auto full = narrow(pkg.Id().FullName().c_str());
       const auto name = narrow(pkg.Id().Name().c_str());
-      if (full == name_or_full || name == name_or_full) {
+      const auto family = narrow(pkg.Id().FamilyName().c_str());
+      if (package_query_matches(name_or_full, name, family, full)) {
         st.registered = true;
         st.package_full_name = full;
-        st.package_family_name = narrow(pkg.Id().FamilyName().c_str());
+        st.package_family_name = family;
         st.installed_location = narrow(pkg.InstalledLocation().Path().c_str());
         st.publisher = narrow(pkg.Id().Publisher().c_str());
         const auto v = pkg.Id().Version();

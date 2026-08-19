@@ -46,7 +46,9 @@ const CommandInfo kCommands[] = {
     {Command::RegisterLoose, "register-loose", "register-loose --manifest FILE [--report FILE]"},
     {Command::Activate, "activate", "activate --aumid AUMID [--arguments TEXT] [--report FILE]"},
     {Command::Status, "status", "status --name NAME [--report FILE]"},
-    {Command::Unregister, "unregister", "unregister --package-full-name NAME [--report FILE]"},
+    {Command::Unregister, "unregister",
+     "unregister (--aumid AUMID | --package-family-name PFN | --package-full-name FULL | --name NAME) "
+     "[--report FILE]"},
     {Command::RemoveRetrofit, "remove-retrofit",
      "remove-retrofit --name NAME [--receipt FILE] [--report FILE]"},
     {Command::RetrofitWin32Sparse, "retrofit-win32-sparse",

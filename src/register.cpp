@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <vector>
 
 #ifdef _WIN32
 // Real implementations live in src/win/package_manager.cpp
@@ -82,11 +83,45 @@ Expected<RegistrationResult> register_loose(const RegistrationRequest& request) 
 #endif
 }
 
-Status unregister_package(std::string_view package_full_name) {
+bool package_query_matches(std::string_view query, std::string_view name,
+                           std::string_view family_name, std::string_view full_name) {
+  if (query.empty()) return false;
+  if (query == full_name || query == family_name || query == name) return true;
+  const auto bang = query.find('!');
+  if (bang != std::string_view::npos && bang > 0) {
+    return query.substr(0, bang) == family_name;
+  }
+  return false;
+}
+
+Status unregister_package(std::string_view package_id) {
 #ifdef _WIN32
-  return win_unregister_package(package_full_name);
+  auto listed = win_list_installed_msix();
+  if (!listed) return Status::fail(listed.code(), listed.message());
+  std::vector<std::string> full_names;
+  for (const auto& p : listed.value()) {
+    if (package_query_matches(package_id, p.name, p.family_name, p.full_name)) {
+      full_names.push_back(p.full_name);
+    }
+  }
+  if (full_names.empty()) {
+    // Exact full names that are already gone stay idempotent via RemovePackageAsync.
+    if (package_id.find('!') == std::string_view::npos &&
+        package_id.find("__") != std::string_view::npos) {
+      return win_unregister_package(package_id);
+    }
+    return Status::fail(ExitCode::NotFound,
+                        "no installed package matches '" + std::string(package_id) +
+                            "' (accepted: name, package family name, package full name, or AUMID)");
+  }
+  Status last = Status::success();
+  for (const auto& full : full_names) {
+    last = win_unregister_package(full);
+    if (!last) return last;
+  }
+  return last;
 #else
-  (void)package_full_name;
+  (void)package_id;
   return Status::success();
 #endif
 }

@@ -153,6 +153,20 @@ TEST(rollback_removes_nonempty_journaled_directory) {
   std::filesystem::remove_all(root, ec);
 }
 
+TEST(package_query_matches_name_pfn_full_and_aumid) {
+  const auto name = std::string_view("ZCode");
+  const auto family = std::string_view("ZCode_mhb6sk8yz7b6a");
+  const auto full = std::string_view("ZCode_1.0.0.0_x64__mhb6sk8yz7b6a");
+  CHECK(package_query_matches("ZCode", name, family, full));
+  CHECK(package_query_matches("ZCode_mhb6sk8yz7b6a", name, family, full));
+  CHECK(package_query_matches("ZCode_1.0.0.0_x64__mhb6sk8yz7b6a", name, family, full));
+  CHECK(package_query_matches("ZCode_mhb6sk8yz7b6a!ZCode", name, family, full));
+  CHECK(package_query_matches("ZCode_mhb6sk8yz7b6a!probe", name, family, full));
+  CHECK(!package_query_matches("Other_mhb6sk8yz7b6a!ZCode", name, family, full));
+  CHECK(!package_query_matches("Contoso.WinWf2", name, family, full));
+  CHECK(!package_query_matches("", name, family, full));
+}
+
 TEST(unregister_treats_not_installed_hresults_as_success) {
   CHECK(is_package_not_installed_status(static_cast<std::int32_t>(0x80073CF1), ""));
   CHECK(is_package_not_installed_status(static_cast<std::int32_t>(0x80073CFD), ""));

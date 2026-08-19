@@ -449,11 +449,18 @@ int op_status(const ParsedCommand& cmd, Report& report) {
 }
 
 int op_unregister(const ParsedCommand& cmd, Report& report) {
-  const auto name = cmd.require("package-full-name");
-  if (name.empty()) return fail(report, ExitCode::Usage, "missing --package-full-name");
-  auto st = unregister_package(name);
+  std::string id = cmd.require("aumid");
+  if (id.empty()) id = cmd.require("package-family-name");
+  if (id.empty()) id = cmd.require("package-full-name");
+  if (id.empty()) id = cmd.require("name");
+  if (id.empty() && !cmd.positionals.empty()) id = cmd.positionals[0];
+  if (id.empty()) {
+    return fail(report, ExitCode::Usage,
+                "pass --aumid, --package-family-name, --package-full-name, or --name");
+  }
+  auto st = unregister_package(id);
   if (!st) return fail(report, st.code, st.message);
-  report.summary = name;
+  report.summary = id;
   return finish(report, 0);
 }
 

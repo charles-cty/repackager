@@ -61,6 +61,11 @@ Expected<RegistrationResult> register_sparse(const RegistrationRequest& request)
 Expected<RegistrationResult> register_loose(const RegistrationRequest& request);
 Status unregister_package(std::string_view package_full_name);
 Expected<PackageStatus> query_package_status(std::string_view name_or_full);
+
+// True when `query` is the package name, family name (PFN), full name, or an AUMID
+// whose family prefix matches (`FamilyName!ApplicationId`).
+bool package_query_matches(std::string_view query, std::string_view name,
+                           std::string_view family_name, std::string_view full_name);
 Expected<std::vector<InstalledPackage>> list_installed_msix();
 Expected<InstalledPackage> find_installed_package(std::string_view full_name);
 
