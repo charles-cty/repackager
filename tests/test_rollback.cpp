@@ -124,6 +124,28 @@ TEST(rollback_workflow_prepare_fault_after_journal) {
   std::filesystem::remove_all(root, ec);
 }
 
+TEST(rollback_signing_failure_removes_new_output_and_preserves_source) {
+  const auto root = std::filesystem::temp_directory_path() / "repackager-signing-rollback";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto src = root / "src";
+  const auto out = root / "out";
+  std::filesystem::create_directories(src, ec);
+  CHECK(test::write_minimal_pe(src / "probe.exe", test::PeBuildOptions{}));
+  const auto original_hash = sha256_file_hex(src / "probe.exe");
+
+  const int code = run_cli(std::vector<std::string>{
+      "retrofit-win32-sparse", "--source", src.string(), "--executable", "probe.exe",
+      "--output", out.string(), "--name", "Contoso.SigningFailure", "--publisher",
+      "CN=Missing Certificate", "--signing-thumbprint",
+      "0000000000000000000000000000000000000000", "--prepare-only"});
+
+  CHECK(code != 0);
+  CHECK_EQ(sha256_file_hex(src / "probe.exe"), original_hash);
+  CHECK(!std::filesystem::exists(out));
+  std::filesystem::remove_all(root, ec);
+}
+
 TEST(rollback_removes_nonempty_journaled_directory) {
   const auto root = std::filesystem::temp_directory_path() / "repackager-rb-dir";
   std::error_code ec;

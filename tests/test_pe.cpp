@@ -129,6 +129,10 @@ TEST(pe_signed_with_consent_proceeds) {
   auto r = patch_exe_identity(path, opt);
   CHECK(r);
   CHECK(msix_tuple_matches(r.value().verified, opt.identity));
+  CHECK(r.value().signature_stripped);
+  auto after = inspect_pe(path);
+  CHECK(after);
+  CHECK(!after.value().authenticode_present);
 }
 
 TEST(pe_empty_merge_creates_base) {

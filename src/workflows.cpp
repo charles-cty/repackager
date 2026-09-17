@@ -136,6 +136,23 @@ Status maybe_validate_makeappx(const std::filesystem::path& identity_dir, Report
   return validate_manifest_with_makeappx(identity_dir, tool.value(), true);
 }
 
+Status validate_signing_options(const ParsedCommand& cmd) {
+  const auto publisher = cmd.get("publisher").value_or(std::string(kUnsignedPublisher));
+  if (auto st = validate_publisher(publisher); !st) return st;
+  if (auto thumbprint = cmd.get("signing-thumbprint")) {
+    auto normalized = normalize_sha1_thumbprint(*thumbprint);
+    if (!normalized) return Status::fail(normalized.code(), normalized.message());
+  }
+  return Status::success();
+}
+
+Status sign_if_requested(const ParsedCommand& cmd, const std::filesystem::path& executable,
+                         std::string_view publisher) {
+  auto thumbprint = cmd.get("signing-thumbprint");
+  if (!thumbprint) return Status::success();
+  return sign_executable_with_thumbprint(executable, *thumbprint, publisher);
+}
+
 }  // namespace
 
 int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
@@ -147,6 +164,9 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
     return fail_msg(report, ExitCode::Usage,
                     "require --source, --executable, --output, --name");
   }
+  if (auto st = validate_signing_options(cmd); !st) {
+    return fail_msg(report, st.code, st.message);
+  }
   auto resolved = resolve_executable_under_root(source, exe_arg);
   if (!resolved) return fail_msg(report, resolved.code(), resolved.message());
   const auto rel_exe = resolved.value().relative;
@@ -156,6 +176,7 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   if (!directory_is_absent_or_empty(output)) {
     return fail_msg(report, ExitCode::Conflict, "output must be absent or empty");
   }
+  const bool output_existed = std::filesystem::exists(output, ec);
   if (auto st = validate_package_name(name); !st) {
     return fail_msg(report, st.code, st.message);
   }
@@ -170,7 +191,7 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   rec.layout = LayoutKind::SparseExternal;
   rec.trust = TrustLevel::MediumIL;
   rec.identity.name = name;
-  rec.identity.publisher = std::string(kUnsignedPublisher);
+  rec.identity.publisher = cmd.get("publisher").value_or(std::string(kUnsignedPublisher));
   rec.identity.version =
       pe.value().file_version.empty() ? "1.0.0.0" : pe.value().file_version;
   rec.identity.architecture = Architecture::Neutral;
@@ -193,8 +214,11 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   if (auto st = write_journal(journal_path, journal); !st) {
     return fail_msg(report, st.code, st.message);
   }
+  if (!output_existed) journal_record_path(journal, output);
+  journal_record_path(journal, output / ".repackager");
   record_created(rec, journal, journal_path);
   persist_receipts(rec, layout_receipt_path(output), false, {});
+  record_created(rec, journal, layout_receipt_path(output));
 
   if (auto st = fault_checkpoint("after-journal"); !st) {
     return rollback_and_fail(report, rec, journal, st.code, st.message);
@@ -219,6 +243,9 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
   auto patched = patch_exe_identity(staged_exe, patch);
   if (!patched) {
     return rollback_and_fail(report, rec, journal, patched.code(), patched.message());
+  }
+  if (auto st = sign_if_requested(cmd, staged_exe, rec.identity.publisher); !st) {
+    return rollback_and_fail(report, rec, journal, st.code, st.message);
   }
 
   auto assets = generate_assets(assets_dir, staged_exe, name, &journal);
@@ -259,7 +286,6 @@ int workflow_retrofit_win32_sparse(const ParsedCommand& cmd, Report& report) {
 
   rec.external_location = payload.string();
   persist_receipts(rec, layout_receipt_path(output), false, {});
-  record_created(rec, journal, layout_receipt_path(output));
 
   const auto after_source = sha256_file_hex(source_exe);
   if (after_source != source_hash) {
@@ -479,13 +505,18 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   const auto full = cmd.require("package-full-name");
   const auto output = opt_path(cmd, "output");
   const auto name = cmd.require("name");
+  std::error_code ec;
   if (full.empty() || output.empty() || name.empty()) {
     return fail_msg(report, ExitCode::Usage,
                     "require --package-full-name, --output, --name");
   }
+  if (auto st = validate_signing_options(cmd); !st) {
+    return fail_msg(report, st.code, st.message);
+  }
   if (!directory_is_absent_or_empty(output)) {
     return fail_msg(report, ExitCode::Conflict, "output must be absent or empty");
   }
+  const bool output_existed = std::filesystem::exists(output, ec);
   if (auto st = validate_package_name(name); !st) {
     return fail_msg(report, st.code, st.message);
   }
@@ -499,7 +530,6 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   }
   const auto installed_loc = std::filesystem::path(installed.value().installed_location);
   const auto src_manifest = installed_loc / "AppxManifest.xml";
-  std::error_code ec;
   if (!std::filesystem::exists(src_manifest, ec)) {
     return fail_msg(report, ExitCode::Validation,
                     "installed package has no readable AppxManifest.xml (encrypted or inaccessible)");
@@ -538,7 +568,7 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   rec.layout = LayoutKind::SparseExternal;
   rec.trust = TrustLevel::MediumIL;
   rec.identity.name = name;
-  rec.identity.publisher = std::string(kUnsignedPublisher);
+  rec.identity.publisher = cmd.get("publisher").value_or(std::string(kUnsignedPublisher));
   rec.identity.version = installed.value().version.empty() ? "1.0.0.0" : installed.value().version;
   rec.identity.architecture = Architecture::Neutral;
   rec.application_id = cmd.get("application-id").value_or(sanitize_application_id(selected.id));
@@ -562,9 +592,14 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   const auto journal_path = output / ".repackager" / "journal.json";
   std::filesystem::create_directories(output / ".repackager", ec);
   journal.journal_path = journal_path.string();
-  write_journal(journal_path, journal);
+  if (auto st = write_journal(journal_path, journal); !st) {
+    return fail_msg(report, st.code, st.message);
+  }
+  if (!output_existed) journal_record_path(journal, output);
+  journal_record_path(journal, output / ".repackager");
   record_created(rec, journal, journal_path);
   persist_receipts(rec, layout_receipt_path(output), false, {});
+  record_created(rec, journal, layout_receipt_path(output));
 
   const auto payload = output / "payload";
   const auto identity_dir = output / "identity";
@@ -589,6 +624,9 @@ int workflow_retrofit_msix_sparse(const ParsedCommand& cmd, Report& report) {
   auto patched = patch_exe_identity(staged_exe, patch);
   if (!patched) {
     return rollback_and_fail(report, rec, journal, patched.code(), patched.message());
+  }
+  if (auto st = sign_if_requested(cmd, staged_exe, rec.identity.publisher); !st) {
+    return rollback_and_fail(report, rec, journal, st.code, st.message);
   }
 
   auto assets = generate_assets(identity_dir / "Assets", staged_exe, name, &journal);

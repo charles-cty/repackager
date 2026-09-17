@@ -35,6 +35,24 @@ TEST(xml_parse_roundtrip_appx_fragment) {
   CHECK_EQ(again.value().root.find_child("Identity")->attr("Name"), std::string("N"));
 }
 
+TEST(xml_parse_accepts_utf8_bom) {
+  const std::string src =
+      "\xEF\xBB\xBF"
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+      "<Package><Identity Name=\"N\"/></Package>";
+
+  auto doc = parse_xml(src);
+
+  CHECK(doc);
+  CHECK_EQ(doc.value().root.name, std::string("Package"));
+  CHECK_EQ(doc.value().root.find_child("Identity")->attr("Name"), std::string("N"));
+}
+
+TEST(xml_parse_rejects_utf8_bom_without_root_element) {
+  const std::string src = "\xEF\xBB\xBF";
+  CHECK(!parse_xml(src));
+}
+
 TEST(xml_sparse_manifest_contains_required_tokens) {
   ManifestRequest req;
   req.identity.name = "Contoso.Probe";
@@ -47,7 +65,7 @@ TEST(xml_sparse_manifest_contains_required_tokens) {
   CHECK(gen.xml.find("mediumIL") != std::string::npos);
   CHECK(gen.xml.find("AllowExternalContent") != std::string::npos);
   CHECK(gen.xml.find("Contoso.Probe") != std::string::npos);
-  CHECK(gen.xml.find(std::string(kUnsignedPublisherOid)) != std::string::npos);
+  CHECK(gen.xml.find("Publisher=\"CN=Repackager\"") != std::string::npos);
   CHECK(gen.xml.find("ProcessorArchitecture=\"neutral\"") != std::string::npos);
 }
 

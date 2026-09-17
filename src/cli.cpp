@@ -53,7 +53,8 @@ const CommandInfo kCommands[] = {
      "remove-retrofit --name NAME [--receipt FILE] [--report FILE]"},
     {Command::RetrofitWin32Sparse, "retrofit-win32-sparse",
      "retrofit-win32-sparse --source DIR --executable PATH --output DIR --name NAME "
-     "[--display-name T] [--application-id ID] [--overlay-manifest FILE] "
+     "[--publisher PUB] [--signing-thumbprint SHA1] [--display-name T] "
+     "[--application-id ID] [--overlay-manifest FILE] "
      "[--overlay-files DIR] [--accept-signature-loss] [--prepare-only] [--launch]"},
     {Command::RetrofitWin32Inplace, "retrofit-win32-inplace",
      "retrofit-win32-inplace --directory DIR --executable PATH --name NAME "
@@ -61,7 +62,8 @@ const CommandInfo kCommands[] = {
      "[--overlay-manifest FILE] [--overlay-files DIR] [--prepare-only] [--launch]"},
     {Command::RetrofitMsixSparse, "retrofit-msix-sparse",
      "retrofit-msix-sparse --package-full-name FULL --output DIR --name NEW "
-     "[--source-application-id ID] [--display-name T] [--application-id ID] "
+     "[--publisher PUB] [--signing-thumbprint SHA1] [--source-application-id ID] "
+     "[--display-name T] [--application-id ID] "
      "[--overlay-manifest FILE] [--overlay-files DIR] [--accept-signature-loss] "
      "[--prepare-only] [--launch]"},
     {Command::ElevatedWorker, "elevated-worker", "elevated-worker --request FILE"},

@@ -55,13 +55,28 @@ TEST(cli_parse_options_and_flags) {
   auto p = parse_command(std::vector<std::string>{
       "retrofit-win32-sparse", "--source", "C:\\src", "--executable", "app.exe",
       "--output", "C:\\out", "--name", "Contoso.App", "--prepare-only",
-      "--accept-signature-loss"});
+      "--accept-signature-loss", "--publisher", "CN=Contoso", "--signing-thumbprint",
+      "00112233445566778899aabbccddeeff00112233"});
   CHECK(p);
   CHECK(p.value().command == Command::RetrofitWin32Sparse);
   CHECK_EQ(p.value().require("source"), std::string("C:\\src"));
   CHECK_EQ(p.value().require("name"), std::string("Contoso.App"));
   CHECK(p.value().has_flag("prepare-only"));
   CHECK(p.value().has_flag("accept-signature-loss"));
+  CHECK_EQ(p.value().require("publisher"), std::string("CN=Contoso"));
+  CHECK_EQ(p.value().require("signing-thumbprint"),
+           std::string("00112233445566778899aabbccddeeff00112233"));
+}
+
+TEST(cli_retrofit_rejects_invalid_signing_thumbprint_before_creating_output) {
+  const auto out = std::filesystem::temp_directory_path() / "repackager-invalid-thumbprint";
+  std::error_code ec;
+  std::filesystem::remove_all(out, ec);
+  const int code = run_cli(std::vector<std::string>{
+      "retrofit-win32-sparse", "--source", "missing", "--executable", "app.exe",
+      "--output", out.string(), "--name", "Contoso.App", "--signing-thumbprint", "1234"});
+  CHECK_EQ(code, static_cast<int>(ExitCode::Validation));
+  CHECK(!std::filesystem::exists(out));
 }
 
 TEST(cli_run_rejects_bad_usage_with_stable_exit) {
@@ -171,7 +186,7 @@ TEST(cli_retrofit_win32_sparse_prepare_only_twice) {
     CHECK(xml.find("mediumIL") != std::string::npos);
     CHECK(xml.find("AllowExternalContent") != std::string::npos);
     CHECK(xml.find("Contoso.Prepare") != std::string::npos);
-    CHECK(xml.find("OID.2.25.311729368913984317654407730594956997722=1") != std::string::npos);
+    CHECK(xml.find("Publisher=\"CN=Repackager\"") != std::string::npos);
     CHECK_EQ(sha256_file_hex(src / "probe.exe"), source_hash);
     auto rec = read_receipt_file(out / ".repackager" / "receipt.json");
     CHECK(rec);
@@ -183,5 +198,24 @@ TEST(cli_retrofit_win32_sparse_prepare_only_twice) {
       (tmp / "inspect.txt").string()});
   CHECK_EQ(inspect, 0);
   CHECK(std::filesystem::exists(tmp / "inspect.txt"));
+  std::filesystem::remove_all(tmp, ec);
+}
+
+TEST(cli_retrofit_win32_sparse_uses_requested_publisher) {
+  const auto tmp = std::filesystem::temp_directory_path() / "repackager-publisher";
+  std::error_code ec;
+  std::filesystem::remove_all(tmp, ec);
+  const auto src = tmp / "src";
+  const auto out = tmp / "out";
+  std::filesystem::create_directories(src, ec);
+  CHECK(test::write_minimal_pe(src / "probe.exe", test::PeBuildOptions{}));
+  const int code = run_cli(std::vector<std::string>{
+      "retrofit-win32-sparse", "--source", src.string(), "--executable", "probe.exe",
+      "--output", out.string(), "--name", "Contoso.Publisher", "--publisher",
+      "CN=Contoso Test", "--prepare-only"});
+  CHECK_EQ(code, 0);
+  std::ifstream in(out / "identity" / "AppxManifest.xml");
+  std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(xml.find("Publisher=\"CN=Contoso Test\"") != std::string::npos);
   std::filesystem::remove_all(tmp, ec);
 }

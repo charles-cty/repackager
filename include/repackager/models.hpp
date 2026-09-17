@@ -10,11 +10,7 @@
 
 namespace repackager {
 
-inline constexpr std::string_view kUnsignedPublisher =
-    "CN=Repackager, OID.2.25.311729368913984317654407730594956997722=1";
-
-inline constexpr std::string_view kUnsignedPublisherOid =
-    "OID.2.25.311729368913984317654407730594956997722=1";
+inline constexpr std::string_view kUnsignedPublisher = "CN=Repackager";
 
 inline constexpr int kReceiptSchemaVersion = 1;
 

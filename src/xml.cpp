@@ -433,6 +433,10 @@ std::string xml_escape_attr(std::string_view text) {
 Expected<XmlDocument> parse_xml(std::string_view text) {
   Parser p{text, 0};
   XmlDocument doc;
+  // App package manifests commonly include a UTF-8 byte-order mark. It is an
+  // encoding signature rather than document content, so consume it before
+  // looking for the XML declaration or root element.
+  p.consume("\xEF\xBB\xBF");
   p.skip_ws();
   if (p.consume("<?xml")) {
     while (!p.eof() && !p.consume("?>")) {

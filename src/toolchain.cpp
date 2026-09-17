@@ -1,6 +1,7 @@
 #include "repackager/toolchain.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <sstream>
 
@@ -9,6 +10,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <wincrypt.h>
 #else
 #include <sys/wait.h>
 #include <unistd.h>
@@ -24,6 +26,15 @@ std::wstring widen(const std::string& s) {
   std::wstring w(static_cast<std::size_t>(n), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
   return w;
+}
+
+std::wstring certificate_subject_string(CERT_NAME_BLOB subject, DWORD flags) {
+  const DWORD size = CertNameToStrW(X509_ASN_ENCODING, &subject, flags, nullptr, 0);
+  if (size == 0) return {};
+  std::wstring text(static_cast<std::size_t>(size), L'\0');
+  CertNameToStrW(X509_ASN_ENCODING, &subject, flags, text.data(), size);
+  text.resize(static_cast<std::size_t>(size - 1));
+  return text;
 }
 
 std::string quote_arg(const std::string& a) {
@@ -66,6 +77,65 @@ std::vector<std::filesystem::path> sdk_bin_roots() {
   return roots;
 }
 
+#ifdef _WIN32
+std::string concise_process_output(const ProcessResult& result) {
+  std::string text = result.stderr_text + result.stdout_text;
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+    text.pop_back();
+  }
+  constexpr std::size_t kMaxLength = 2000;
+  if (text.size() > kMaxLength) text = text.substr(text.size() - kMaxLength);
+  return text;
+}
+
+Status validate_signing_certificate(std::string_view thumbprint,
+                                    std::string_view publisher) {
+  std::vector<BYTE> hash;
+  hash.reserve(thumbprint.size() / 2);
+  auto nibble = [](char c) -> BYTE {
+    if (c >= '0' && c <= '9') return static_cast<BYTE>(c - '0');
+    return static_cast<BYTE>(c - 'A' + 10);
+  };
+  for (std::size_t i = 0; i < thumbprint.size(); i += 2) {
+    hash.push_back(static_cast<BYTE>((nibble(thumbprint[i]) << 4) | nibble(thumbprint[i + 1])));
+  }
+
+  HCERTSTORE store = CertOpenStore(CERT_STORE_PROV_SYSTEM_W, 0, 0,
+                                   CERT_SYSTEM_STORE_CURRENT_USER, L"MY");
+  if (!store) {
+    return Status::fail(ExitCode::Environment,
+                        "cannot open CurrentUser certificate store 'My'");
+  }
+  CRYPT_HASH_BLOB hash_blob{static_cast<DWORD>(hash.size()), hash.data()};
+  PCCERT_CONTEXT certificate = CertFindCertificateInStore(
+      store, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SHA1_HASH,
+      &hash_blob, nullptr);
+  if (!certificate) {
+    CertCloseStore(store, 0);
+    return Status::fail(ExitCode::NotFound,
+                        "signing certificate not found in CurrentUser\\My");
+  }
+
+  const std::wstring expected = widen(std::string(publisher));
+  const std::wstring forward = certificate_subject_string(
+      certificate->pCertInfo->Subject, CERT_X500_NAME_STR);
+  const std::wstring reverse = certificate_subject_string(
+      certificate->pCertInfo->Subject, CERT_X500_NAME_STR | CERT_NAME_STR_REVERSE_FLAG);
+  auto equal_name = [&](const std::wstring& actual) {
+    return CompareStringOrdinal(expected.data(), static_cast<int>(expected.size()),
+                                actual.data(), static_cast<int>(actual.size()), TRUE) == CSTR_EQUAL;
+  };
+  const bool matches = equal_name(forward) || equal_name(reverse);
+  CertFreeCertificateContext(certificate);
+  CertCloseStore(store, 0);
+  if (!matches) {
+    return Status::fail(ExitCode::Validation,
+                        "signing certificate subject does not match --publisher");
+  }
+  return Status::success();
+}
+#endif
+
 }  // namespace
 
 Expected<std::filesystem::path> locate_mt_exe() {
@@ -95,6 +165,77 @@ Expected<std::filesystem::path> locate_makeappx_exe() {
     return Expected<std::filesystem::path>::fail(ExitCode::Environment, "MakeAppx.exe not found");
   }
   return Expected<std::filesystem::path>::ok(std::move(p));
+}
+
+Expected<std::filesystem::path> locate_signtool_exe() {
+  std::vector<std::filesystem::path> cands;
+  for (const auto& root : sdk_bin_roots()) {
+    cands.push_back(root / "x64" / "signtool.exe");
+    cands.push_back(root / "x86" / "signtool.exe");
+    cands.push_back(root / "signtool.exe");
+  }
+  auto p = first_existing(cands);
+  if (p.empty()) {
+    return Expected<std::filesystem::path>::fail(ExitCode::Environment,
+                                                 "signtool.exe not found");
+  }
+  return Expected<std::filesystem::path>::ok(std::move(p));
+}
+
+Expected<std::string> normalize_sha1_thumbprint(std::string_view thumbprint) {
+  std::string normalized;
+  normalized.reserve(40);
+  for (const unsigned char c : thumbprint) {
+    if (std::isspace(c)) continue;
+    if (!std::isxdigit(c)) {
+      return Expected<std::string>::fail(
+          ExitCode::Validation, "signing thumbprint must contain only hexadecimal digits");
+    }
+    normalized.push_back(static_cast<char>(std::toupper(c)));
+  }
+  if (normalized.size() != 40) {
+    return Expected<std::string>::fail(
+        ExitCode::Validation, "signing thumbprint must be a 40-digit SHA-1 certificate hash");
+  }
+  return Expected<std::string>::ok(std::move(normalized));
+}
+
+Status sign_executable_with_thumbprint(const std::filesystem::path& executable,
+                                       std::string_view thumbprint,
+                                       std::string_view publisher) {
+  auto normalized = normalize_sha1_thumbprint(thumbprint);
+  if (!normalized) return Status::fail(normalized.code(), normalized.message());
+#ifdef _WIN32
+  if (auto st = validate_signing_certificate(normalized.value(), publisher); !st) return st;
+
+  auto found = locate_signtool_exe();
+  if (!found) return Status::fail(found.code(), found.message());
+  auto signed_result = run_process(
+      found.value(),
+      {"sign", "/sha1", normalized.value(), "/s", "My", "/fd", "SHA256", executable.string()},
+      executable.parent_path());
+  if (!signed_result) return Status::fail(signed_result.code(), signed_result.message());
+  if (signed_result.value().exit_code != 0) {
+    return Status::fail(ExitCode::Validation,
+                        "SignTool failed to sign executable: " +
+                            concise_process_output(signed_result.value()));
+  }
+
+  auto verified = run_process(found.value(), {"verify", "/pa", "/q", executable.string()},
+                              executable.parent_path());
+  if (!verified) return Status::fail(verified.code(), verified.message());
+  if (verified.value().exit_code != 0) {
+    return Status::fail(ExitCode::Validation,
+                        "signed executable is not trusted: " +
+                            concise_process_output(verified.value()));
+  }
+  return Status::success();
+#else
+  (void)executable;
+  (void)publisher;
+  return Status::fail(ExitCode::Environment,
+                      "Authenticode signing is available only on Windows");
+#endif
 }
 
 Expected<SdkTools> locate_windows_sdk_tools() {

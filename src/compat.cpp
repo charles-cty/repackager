@@ -91,7 +91,9 @@ Expected<TransformResult> transform_msix_manifest_to_sparse(
         dest_parent.children.pop_back();
         result.dropped.push_back(label);
         result.warnings.push_back(Diagnostic{Diagnostic::Severity::Warning, "makeappx-drop",
-                                             label + ": " + st.message});
+                                             label +
+                                                 ": incompatible with sparse manifest "
+                                                 "(rejected by MakeAppx)"});
         return false;
       }
     }

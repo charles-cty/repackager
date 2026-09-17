@@ -113,4 +113,11 @@ TEST(compat_validator_can_drop_failing_candidate) {
   CHECK(tr);
   CHECK(tr.value().xml.find("privateNetworkClientServer") == std::string::npos);
   CHECK(!tr.value().dropped.empty());
+  CHECK_EQ(tr.value().warnings.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(tr.value().warnings.front().code, std::string("makeappx-drop"));
+  CHECK(tr.value().warnings.front().message.find("privateNetworkClientServer") !=
+        std::string::npos);
+  CHECK(tr.value().warnings.front().message.find('\n') == std::string::npos);
+  CHECK(tr.value().warnings.front().message.find("MakeAppx /nv rejected capability") ==
+        std::string::npos);
 }

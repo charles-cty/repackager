@@ -205,6 +205,21 @@ void set_data_dir(PeView& v, int index, DataDir d) {
               &d, sizeof(d));
 }
 
+void strip_authenticode(PeView& v) {
+  const auto security = data_dir(v, kDirSecurity);
+  set_data_dir(v, kDirSecurity, {});
+
+  // The security directory uses a file offset rather than an RVA. Remove a
+  // trailing certificate table, but preserve any overlay that follows it.
+  const auto certificate_offset = static_cast<std::size_t>(security.va);
+  const auto certificate_size = static_cast<std::size_t>(security.size);
+  if (certificate_offset <= v.bytes.size() &&
+      certificate_size <= v.bytes.size() - certificate_offset &&
+      certificate_offset + certificate_size == v.bytes.size()) {
+    v.bytes.resize(certificate_offset);
+  }
+}
+
 std::vector<SectionHeader> sections(const PeView& v) {
   std::vector<SectionHeader> out;
   out.resize(v.coff.number_of_sections);
@@ -638,6 +653,16 @@ Expected<PatchExeResult> patch_exe_identity(const std::filesystem::path& staged_
     return Expected<PatchExeResult>::fail(
         ExitCode::SignatureConsent,
         "staged EXE is signed; pass --accept-signature-loss to continue");
+  }
+
+  if (before.value().authenticode_present) {
+    auto view = parse_pe(staged_exe);
+    if (!view) return Expected<PatchExeResult>::fail(view.error());
+    strip_authenticode(view.value());
+    if (!write_file(staged_exe, view.value().bytes)) {
+      return Expected<PatchExeResult>::fail(ExitCode::Internal,
+                                            "failed to strip Authenticode signature");
+    }
   }
 
   auto merged = patch_embedded_manifest_xml(before.value().embedded_manifest, options.identity);
