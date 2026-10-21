@@ -97,6 +97,20 @@ TEST(cli_unregister_accepts_aumid_and_pfn_options) {
   CHECK_EQ(missing, static_cast<int>(ExitCode::Usage));
 }
 
+TEST(cli_activate_accepts_aumid_or_pfn) {
+  auto aumid = parse_command(std::vector<std::string>{
+      "activate", "--aumid", "ZCode_mhb6sk8yz7b6a!ZCode"});
+  CHECK(aumid);
+  CHECK_EQ(aumid.value().require("aumid"), std::string("ZCode_mhb6sk8yz7b6a!ZCode"));
+  auto pfn = parse_command(std::vector<std::string>{
+      "activate", "--package-family-name", "ZCode_mhb6sk8yz7b6a"});
+  CHECK(pfn);
+  CHECK_EQ(pfn.value().require("package-family-name"),
+           std::string("ZCode_mhb6sk8yz7b6a"));
+  CHECK_EQ(run_cli(std::vector<std::string>{"activate"}),
+           static_cast<int>(ExitCode::Usage));
+}
+
 TEST(cli_make_manifest_writes_report_and_human_output) {
   const auto tmp = std::filesystem::temp_directory_path() / "repackager-cli-make";
   std::error_code ec;

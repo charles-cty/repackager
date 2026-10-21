@@ -249,6 +249,46 @@ Status win_activate_aumid(std::string_view aumid, std::string_view arguments) {
   return Status::success();
 }
 
+Status win_activate_package_family(std::string_view package_family_name,
+                                   std::string_view arguments) {
+  try {
+    winrt::init_apartment();
+    winrt::Windows::Management::Deployment::PackageManager pm;
+    for (const auto& pkg : pm.FindPackagesForUser(L"")) {
+      if (narrow(pkg.Id().FamilyName().c_str()) != package_family_name) continue;
+      const auto manifest = std::filesystem::path(narrow(pkg.InstalledLocation().Path().c_str())) /
+                            "AppxManifest.xml";
+      std::ifstream in(manifest);
+      if (!in) {
+        return Status::fail(ExitCode::NotFound,
+                            "package manifest not found: " + manifest.string());
+      }
+      std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      auto doc = parse_xml(xml);
+      if (!doc) return Status::fail(doc.error().code, doc.error().message);
+      const auto* apps = doc.value().root.find_child("Applications");
+      if (!apps || apps->children.empty()) {
+        return Status::fail(ExitCode::Validation,
+                            "package manifest has no applications: " +
+                                std::string(package_family_name));
+      }
+      const auto application_id = apps->children.front().attr("Id");
+      if (application_id.empty()) {
+        return Status::fail(ExitCode::Validation,
+                            "package manifest application has no Id: " +
+                                std::string(package_family_name));
+      }
+      return win_activate_aumid(std::string(package_family_name) + "!" + application_id,
+                                arguments);
+    }
+    return Status::fail(ExitCode::NotFound,
+                        "installed package family not found: " +
+                            std::string(package_family_name));
+  } catch (const winrt::hresult_error& e) {
+    return Status::fail(ExitCode::Environment, narrow(e.message().c_str()));
+  }
+}
+
 Status win_launch_exe(const std::filesystem::path& exe) {
   SHELLEXECUTEINFOW sei{};
   sei.cbSize = sizeof(sei);

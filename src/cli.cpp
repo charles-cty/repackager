@@ -44,7 +44,8 @@ const CommandInfo kCommands[] = {
     {Command::RegisterSparse, "register-sparse",
      "register-sparse --manifest FILE --external DIR [--report FILE]"},
     {Command::RegisterLoose, "register-loose", "register-loose --manifest FILE [--report FILE]"},
-    {Command::Activate, "activate", "activate --aumid AUMID [--arguments TEXT] [--report FILE]"},
+    {Command::Activate, "activate",
+     "activate (--aumid AUMID | --package-family-name PFN) [--arguments TEXT] [--report FILE]"},
     {Command::Status, "status", "status --name NAME [--report FILE]"},
     {Command::Unregister, "unregister",
      "unregister (--aumid AUMID | --package-family-name PFN | --package-full-name FULL | --name NAME) "

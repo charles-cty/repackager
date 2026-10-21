@@ -409,10 +409,16 @@ int op_register_loose(const ParsedCommand& cmd, Report& report) {
 
 int op_activate(const ParsedCommand& cmd, Report& report) {
   const auto aumid = cmd.require("aumid");
-  if (aumid.empty()) return fail(report, ExitCode::Usage, "missing --aumid");
-  auto st = activate_aumid(aumid, cmd.get("arguments").value_or(""));
+  const auto pfn = cmd.require("package-family-name");
+  if (aumid.empty() == pfn.empty()) {
+    return fail(report, ExitCode::Usage,
+                "pass exactly one of --aumid or --package-family-name");
+  }
+  const auto arguments = cmd.get("arguments").value_or("");
+  auto st = aumid.empty() ? activate_package_family(pfn, arguments)
+                          : activate_aumid(aumid, arguments);
   if (!st) return fail(report, st.code, st.message);
-  report.summary = aumid;
+  report.summary = aumid.empty() ? pfn : aumid;
   return finish(report, 0);
 }
 

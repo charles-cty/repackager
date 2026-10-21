@@ -17,6 +17,8 @@ Expected<PackageStatus> win_query_package_status(std::string_view name_or_full);
 Expected<std::vector<InstalledPackage>> win_list_installed_msix();
 Expected<InstalledPackage> win_find_installed_package(std::string_view full_name);
 Status win_activate_aumid(std::string_view aumid, std::string_view arguments);
+Status win_activate_package_family(std::string_view package_family_name,
+                                   std::string_view arguments);
 Status win_launch_exe(const std::filesystem::path& exe);
 }  // namespace repackager
 #endif
@@ -163,6 +165,18 @@ Status activate_aumid(std::string_view aumid, std::string_view arguments) {
   return Status::fail(ExitCode::Environment,
                       "IApplicationActivationManager is only available on Windows (" +
                           std::string(aumid) + ")");
+#endif
+}
+
+Status activate_package_family(std::string_view package_family_name,
+                               std::string_view arguments) {
+#ifdef _WIN32
+  return win_activate_package_family(package_family_name, arguments);
+#else
+  (void)arguments;
+  return Status::fail(ExitCode::Environment,
+                      "PackageManager is only available on Windows; cannot resolve " +
+                          std::string(package_family_name));
 #endif
 }
 

@@ -70,6 +70,9 @@ Expected<std::vector<InstalledPackage>> list_installed_msix();
 Expected<InstalledPackage> find_installed_package(std::string_view full_name);
 
 Status activate_aumid(std::string_view aumid, std::string_view arguments = {});
+// Activates the first application declared by the package identified by PFN.
+Status activate_package_family(std::string_view package_family_name,
+                               std::string_view arguments = {});
 Status launch_exe(const std::filesystem::path& exe);
 
 // True when RemovePackageAsync failed because the package is already gone.
